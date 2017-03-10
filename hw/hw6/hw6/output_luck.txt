@@ -1,0 +1,2 @@
+luck	hdfs://172.31.28.107:9000/user/tony/input/file2:0+60, 4
+luck	hdfs://172.31.28.107:9000/user/tony/input/file1:0+45, 1

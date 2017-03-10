@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<qualifiedTypeNameHistroy>
+<fullyQualifiedTypeName name="com.amazonaws.services.s3.AmazonS3ClientBuilder"/>
+<fullyQualifiedTypeName name="com.amazonaws.regions.Regions"/>
+<fullyQualifiedTypeName name="com.amazonaws.services.s3.model.Bucket"/>
+<fullyQualifiedTypeName name="com.amazonaws.services.s3.model.ObjectListing"/>
+<fullyQualifiedTypeName name="com.amazonaws.services.s3.model.S3ObjectSummary"/>
+<fullyQualifiedTypeName name="com.amazonaws.services.s3.AmazonS3"/>
+<fullyQualifiedTypeName name="java.util.UUID"/>
+<fullyQualifiedTypeName name="java.util.ArrayList"/>
+<fullyQualifiedTypeName name="java.io.File"/>
+<fullyQualifiedTypeName name="java.util.Random"/>
+</qualifiedTypeNameHistroy>

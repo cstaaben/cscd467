@@ -1,0 +1,10 @@
+alwaysReloadWhenCredentialProfileFileModified=true
+b4860317-86fd-4652-a6b6-88200a95d997\:credentialProfileName=default
+cognitoIdentityId=us-east-1\:c731381e-0e8e-4120-b125-8a19f5a3cc14
+cognitoIdentityPoolId=us-east-1\:d4fdc07f-94fd-4cc6-94fb-f903657f05c1
+credentialProfileAccountIds=b4860317-86fd-4652-a6b6-88200a95d997
+currentAccount=5ee79f17-a454-4813-8b92-95bdf5583c72
+currentDefaultAccount=5ee79f17-a454-4813-8b92-95bdf5583c72
+ec2PreferencesImported=true
+eclipse.preferences.version=1
+mobileAnalyticsClientId=f6c552bb-12af-47a6-af73-df45cc0e88d7
