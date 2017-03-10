@@ -1,9 +1,12 @@
 ## Non-essential CSCD 467 - Parallel & Cloud Computing files
-467FinalProj.zip
-*.docx
-*.pdf
+*/*.zip
+*/*.docx
+*/*.pdf
 rootkey.csv
 slides/
+*.zip
+*.docx
+*.pdf
 
 ## Java Files
 *.class
@@ -13,5 +16,7 @@ slides/
 */.project
 
 ## IntelliJ project files
-*/.idea/
+*/.idea
 */*.iml
+
+467FinalProj/final/.idea/*
