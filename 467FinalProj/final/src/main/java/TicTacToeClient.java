@@ -1,6 +1,8 @@
 // Fig. 24.15: TicTacToeClient.java
 // Client that let a user play Tic-Tac-Toe with another across a network.
 
+import com.amazonaws.AmazonWebServiceResult;
+import com.amazonaws.ResponseMetadata;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.sqs.AmazonSQSClient;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
@@ -18,6 +20,7 @@ import java.awt.event.WindowEvent;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 
@@ -35,9 +38,11 @@ public class TicTacToeClient extends JFrame implements Runnable
 	private final String O_MARK = "O"; // mark for second client
 	private final int bsize = 16;
 	
-	private final static AmazonSQSClient client = (AmazonSQSClient) AmazonSQSClientBuilder.standard().withRegion(Regions.US_WEST_2).build();
+	private final static AmazonSQSClient client = (AmazonSQSClient) AmazonSQSClientBuilder.standard()
+			.withRegion(Regions.US_WEST_2).build();
 	private final String queue;
 	private final String MSG_GROUP = "CSCD467Final_TicTacToe";
+	private SendMessageResult sendResult;
 	
 	// set up user-interface and board
 	public TicTacToeClient( String host )
@@ -109,32 +114,33 @@ public class TicTacToeClient extends JFrame implements Runnable
 //		myMark =  "X"; //Get player's mark (X or O). We hard coded here in demo. In your implementation, you may get this mark dynamically
 			 //from the cloud service. This is the initial state of the game.
 		Message m = receiveMessage();
-//		myMark = (m.size() == 0) ? X_MARK : O_MARK;
-		if(m == null) {
+//		myMark = (m.getBody().length() == 0) ? X_MARK : O_MARK;
+		if(m.getBody().length() == 0) {
 			myMark = X_MARK;
+			sendResult = sendMessage(myMark + " connected.");
 			displayMessage("Waiting for " + O_MARK + " player to connect.");
+			
+			m = waitForNewMsg(m.getMessageId());
+			displayMessage(m.getBody());
+			deleteMessage(m);
+			
+			sendResult = sendMessage("GAME START");
+			displayMessage("GAME START");
 		}
 		else {
 			myMark = O_MARK;
-			sendMessage(myMark + " connected.");
-			displayMessage(myMark + " connected.");
-		}
-		
-		// end method run
-		SwingUtilities.invokeLater(() -> {
-			Message message = receiveMessage();
+			sendResult = sendMessage(myMark + " connected.");
+			displayMessage("Connected.");
 			
+			m = waitForNewMsg(sendResult.getMessageId());
+			displayMessage(m.getBody());
+			deleteMessage(m);
+		}
+		printErrors(sendResult);
+		
+		SwingUtilities.invokeLater(() -> {
 			// display player's mark
 			idField.setText( "You are player \"" + myMark + "\"" );
-			
-			sendMessage(myMark + " connected.");
-			
-			if(message == null) {
-				message = receiveMessage();
-			}
-			else {
-				sendMessage("GAME START");
-			}
 		}); // end call to SwingUtilities.invokeLater
 		
 		myTurn = ( myMark.equals( X_MARK ) ); // determine if client's turn
@@ -147,29 +153,92 @@ public class TicTacToeClient extends JFrame implements Runnable
 			// Basically, this client player will retrieve a message from cloud in each while iteration
 			// and process it until game over is detected.
 			// Please check the processMessage() method below to gain some clues.
+			
+			
 		
 		} // end while
 		
 
 	} // end method run
 	
-	private void sendMessage(String message) {
-		client.sendMessage(new SendMessageRequest()
+	private void printErrors(AmazonWebServiceResult<ResponseMetadata> result) {
+		if(result.getSdkHttpMetadata().getHttpStatusCode() != 200) {
+			Map<String, String> headers = result.getSdkHttpMetadata().getHttpHeaders();
+			
+			for(String key : headers.keySet()) {
+				System.err.printf("%s: %s\n", key, headers.get(key));
+			} // end foreach
+		}
+	} // end printErrors
+	
+	/**
+	 * Delete an entire collection of messages from the queue
+	 * @param messages the messages to be deleted
+	 */
+	private void deleteMessages(List<Message> messages) {
+		for(Message message : messages) {
+			client.deleteMessage(new DeleteMessageRequest().withQueueUrl(queue).withReceiptHandle(message.getReceiptHandle()));
+		}
+	}
+	
+	/**
+	 * Delete a single message from the queue
+	 * @param message the message to be deleted
+	 */
+	private void deleteMessage(Message message) {
+		client.deleteMessage(new DeleteMessageRequest().withQueueUrl(queue).withReceiptHandle(message.getReceiptHandle()));
+	}
+	
+	/**
+	 * Sends a message to the AWS FIFO SQS with an unique ID to allow for duplicate messages to be treated individually
+	 * @param message the message to be sent to the queue
+	 * @return the SendMessageResult returned from the AmazonSQSClient.sendMessage function
+	 */
+	private SendMessageResult sendMessage(String message) {
+		return client.sendMessage(new SendMessageRequest()
 				.withQueueUrl(queue)
 				.withMessageBody(message)
 				.withMessageGroupId(MSG_GROUP)
+				.withMessageDeduplicationId(UUID.randomUUID().toString())
 		);
 	}
 	
+	/**
+	 * Receive a single message with a default wait time of 20 seconds; used to test if current instance is Player 1 or 2
+	 * @return a new Message object with an empty body if there are no messages in the queue, otherwise the
+	 * 			received Message object
+	 */
 	private Message receiveMessage() {
-		
-		List<Message> messages = client.receiveMessage(new ReceiveMessageRequest()
+		List<Message> messages =  client.receiveMessage(new ReceiveMessageRequest()
 				.withQueueUrl(queue)
-				.withWaitTimeSeconds(1)
+				.withWaitTimeSeconds(20)
 				.withMaxNumberOfMessages(1)
 		).getMessages();
 		
-		return (messages.size() == 0) ? null : messages.get(0);
+		return (messages.size() == 0) ? new Message().withBody("") : messages.get(0);
+	}
+	
+	/**
+	 * Continually poll the queue for a message with a new message ID, with a default setting of long polling for 20 seconds
+	 * and a maximum of 1 message returned
+	 * @param oldMsgId a previously obtained message ID
+	 * @return the new Message object
+	 */
+	private Message waitForNewMsg(String oldMsgId) {
+		Message result = new Message().withBody("");
+		List<Message> messages;
+		
+		while(result.getBody().length() == 0 || result.getMessageId().equals(oldMsgId)) {
+			messages = client.receiveMessage(new ReceiveMessageRequest()
+					.withQueueUrl(queue)
+					.withWaitTimeSeconds(20)
+					.withMaxNumberOfMessages(1)
+			).getMessages();
+			
+			result = (messages.size() == 0) ? new Message().withBody("") : messages.get(0);
+		}
+		
+		return result;
 	}
 	
 	// You have write this method that checks the game board to detect winning status.
@@ -212,27 +281,18 @@ public class TicTacToeClient extends JFrame implements Runnable
 	// manipulate outputArea in event-dispatch thread
 	private void displayMessage( final String messageToDisplay )
 	{
-		SwingUtilities.invokeLater(
-			new Runnable() {
-				public void run()
-		  {
+		SwingUtilities.invokeLater(() -> {
 			displayArea.append( messageToDisplay ); // updates output
-		  } // end method run
-			}  // end inner class
-		); // end call to SwingUtilities.invokeLater
+		}); // end call to SwingUtilities.invokeLater
 	} // end method displayMessage
 	
 	// utility method to set mark on board in event-dispatch thread
 	private void setMark( final Square squareToMark, final String mark )
 	{
-		SwingUtilities.invokeLater(
-			new Runnable() {
-				public void run()
+		SwingUtilities.invokeLater(() ->
 			  {
 				squareToMark.setMark( mark ); // set mark in square
-			  } // end method run
-			} // end anonymous inner class
-		); // end call to SwingUtilities.invokeLater
+			}); // end call to SwingUtilities.invokeLater
 	} // end method setMark
 	
 	// Send message to cloud service indicating clicked square
