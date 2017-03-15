@@ -41,7 +41,8 @@ public class TicTacToeClient extends JFrame implements Runnable
 	private final static AmazonSQSClient client = (AmazonSQSClient) AmazonSQSClientBuilder.standard()
 			.withRegion(Regions.US_WEST_2).build();
 	private final String queue;
-	private final String MSG_GROUP = "CSCD467Final_TicTacToe";
+	private final static String MSG_GROUP = "CSCD467Final_TicTacToe";
+	private final static String OPP_MOVE = "Opponent moved.";
 	private SendMessageResult sendResult;
 	
 	// set up user-interface and board
@@ -154,13 +155,21 @@ public class TicTacToeClient extends JFrame implements Runnable
 			// and process it until game over is detected.
 			// Please check the processMessage() method below to gain some clues.
 			
+			while(!myTurn) {
+				m = waitForNewMsg(sendResult.getMessageId());
+				processMessage(m.getBody());
+			}
 			
-		
+			
 		} // end while
 		
 
 	} // end method run
 	
+	/**
+	 * Print any errors resulting from a message being sent or received to the Amazon SQS
+	 * @param result any MessageResult returned from performing a message operation
+	 */
 	private void printErrors(AmazonWebServiceResult<ResponseMetadata> result) {
 		if(result.getSdkHttpMetadata().getHttpStatusCode() != 200) {
 			Map<String, String> headers = result.getSdkHttpMetadata().getHttpHeaders();
@@ -243,7 +252,284 @@ public class TicTacToeClient extends JFrame implements Runnable
 	
 	// You have write this method that checks the game board to detect winning status.
 	private boolean isGameOver() {
-	   return false;
+		String curMark;
+		
+		for(int i = 0; i < board.length; i++) {
+			for(int j = 0; j < board[i].length; j++) {
+				// make sure current square has a mark in it
+				if(!board[i][j].getMark().equals(" ")) {
+					curMark = board[i][j].getMark(); // set mark to search for
+					
+					if(i+5 < board.length) {
+						if(j < 4) {
+							if(checkLeftArea(i, j, curMark)) {
+								return true;
+							}
+						} // end if (j == 0)
+						else if(j+5 < board[i].length) {
+							if(checkCenterArea(i, j, curMark)) {
+								return true;
+							}
+						} // end else-if (j+5)
+						else {
+							if(checkRightArea(i, j, curMark)) {
+								return true;
+							}
+						} // end else
+					} // end if (i+5)
+					else {
+						if(checkBottomArea(i, j, curMark)) {
+							return true;
+						}
+					}
+				} // end if board
+			} // end for j
+		} // end for i
+		
+		return false;
+	}
+	
+	private boolean checkLeftArea(int row, int col, String mark) {
+		int c = 0;
+		int markCnt = 0;
+		
+		// check right
+		while(c < 5 && board[row][col+c].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			c = 0;
+			markCnt = 0;
+		}
+		
+		// check down
+		while(c < 5 && board[row+c][col].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			c = 0;
+			markCnt = 0;
+		}
+		
+		// check down right
+		while(c < 5 && board[row+c][col+c].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			c = 0;
+			markCnt = 0;
+		}
+		
+		return false;
+	}
+	
+	private boolean checkCenterArea(int row, int col, String mark) {
+		int c = 0;
+		int markCnt = 0;
+		
+		// check right
+		while(c < 5 && board[row][col+c].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			markCnt = 0;
+			c = 0;
+		}
+		
+		// check down
+		while(c < 5 && board[row+c][col].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			markCnt = 0;
+			c = 0;
+		}
+		
+		// check down-right
+		while(c < 5 && board[row+c][col+c].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			markCnt = 0;
+			c = 0;
+		}
+		
+		// check down-left
+		if(col >= 4) {
+			while(c < 5 && board[row+c][col-c].getMark().equals(mark)) {
+				c++;
+				markCnt++;
+			}
+			
+			if(markCnt == 5) {
+				return true;
+			}
+			else {
+				c = 0;
+				markCnt = 0;
+			}
+		} //end if (col >= 4)
+		
+		return false;
+	}
+	
+	private boolean checkRightArea(int row, int col, String mark) {
+		int c = 0;
+		int markCnt = 0;
+		
+		// check down
+		while(c < 5 && board[row+c][col].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			markCnt = 0;
+			c = 0;
+		}
+		
+		// check down-left
+		while(c < 5 && board[row+c][col-c].getMark().equals(mark)) {
+			c++;
+			markCnt++;
+		}
+		
+		if(markCnt == 5) {
+			return true;
+		}
+		else {
+			markCnt = 0;
+			c = 0;
+		}
+		
+		return false;
+	}
+	
+	private boolean checkBottomArea(int row, int col, String mark) {
+		int markCnt = 0;
+		int c = 0;
+		
+		if(col <= 4) {
+			// check up
+			while(c < 5 && board[row-c][col].getMark().equals(mark)) {
+				c++;
+				markCnt++;
+			}
+			
+			if(markCnt == 5) {
+				return true;
+			}
+			else {
+				markCnt = 0;
+				c = 0;
+			}
+			
+			// check right
+			while(c < 5 && board[row][col+c].getMark().equals(mark)) {
+				c++;
+				markCnt++;
+			}
+			
+			if(markCnt == 5) {
+				return true;
+			}
+			else {
+				markCnt = 0;
+				c = 0;
+			}
+			
+			// check up-right
+			while(c < 5 && board[row-c][col+c].getMark().equals(mark)) {
+				c++;
+				markCnt++;
+			}
+			
+			if(markCnt == 5) {
+				return true;
+			}
+			else {
+				markCnt = 0;
+				c = 0;
+			}
+		} // end if (col < 4)
+		else if(col+5 < board[row].length) {
+			// check up
+			while(c < 5 && board[row-c][col].getMark().equals(mark)) {
+				c++;
+				markCnt++;
+			}
+			
+			if(markCnt == 5) {
+				return true;
+			}
+			else {
+				c = 0;
+				markCnt = 0;
+			}
+			
+			// check up-right
+			while(c < 5 && board[row-c][col+c].getMark().equals(mark)) {
+				c++;
+				markCnt++;
+			}
+			
+			if(markCnt == 5) {
+				return true;
+			}
+			else {
+				c = 0;
+				markCnt = 0;
+			}
+			
+			// check right
+			while(c < 5 && board[row][col+c].getMark().equals(mark)) {
+				c++;
+				markCnt++;
+			}
+			
+			if(markCnt == 5) {
+				return true;
+			}
+			else {
+				c = 0;
+				markCnt = 0;
+			}
+		}
+		
+		return false;
 	}
 	
 	// This method is not used currently, but it may give you some hints regarding
@@ -251,14 +537,12 @@ public class TicTacToeClient extends JFrame implements Runnable
 	private void processMessage( String message )
 	{
 		// valid move occurred
-		if ( message.equals( "Opponent Won" ) )
-		{
+		if ( message.equals( "Opponent Won" ) ) {
 			displayMessage( "Game over, Opponent won.\n" );
 			// then highlight the winning locations down below.
 		
 		} // end if
-		else if ( message.equals( "Opponent moved" ) )
-		{
+		else if ( message.equals( "Opponent moved" ) ) {
 			int location = getOpponentMove(); // Here get move location from opponent
 										
 			int row = location / bsize; // calculate row
@@ -373,6 +657,10 @@ public class TicTacToeClient extends JFrame implements Runnable
 			g.drawRect( 0, 0, 29, 29 ); // draw square
 			g.drawString( mark, 11, 20 ); // draw mark
 		} // end method paintComponent
+		
+		public String getMark() {
+			return mark;
+		}
 	} // end inner-class Square
 	
 	
