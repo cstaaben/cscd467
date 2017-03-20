@@ -157,6 +157,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			
 			while(!myTurn) {
 				m = waitForNewMsg(sendResult.getMessageId());
+				deleteMessage(m);
 				processMessage(m.getBody());
 			}
 			
@@ -536,37 +537,53 @@ public class TicTacToeClient extends JFrame implements Runnable
 	// how one client talks to other client through cloud service(s).
 	private void processMessage( String message )
 	{
-		// valid move occurred
-		if ( message.equals( "Opponent Won" ) ) {
-			displayMessage( "Game over, Opponent won.\n" );
-			// then highlight the winning locations down below.
-		
-		} // end if
-		else if ( message.equals( "Opponent moved" ) ) {
-			int location = getOpponentMove(); // Here get move location from opponent
-										
-			int row = location / bsize; // calculate row
-			int column = location % bsize; // calculate column
-			
-			setMark(  board[ row ][ column ],
-			  ( myMark.equals( X_MARK ) ? O_MARK : X_MARK ) ); // mark move
-			displayMessage( "Opponent moved. Your turn.\n" );
-			myTurn = true; // now this client's turn
-		} // end else if
-		else
-			displayMessage( message + "\n" ); // display the message
+		switch(message) {
+			case "Opponent Won":
+				displayMessage("Game over, Opponent won.");
+				// highlight winning locations
+				
+				break;
+				
+			case OPP_MOVE:
+				int loc = getOpponentMove();
+				int row = loc/bsize;
+				int col = loc % bsize;
+				
+				setMark(board[row][col], (myMark.equals(X_MARK) ? O_MARK : X_MARK));
+				displayMessage("Opponent moved. Your turn.");
+				myTurn = true;
+				
+				break;
+				
+			default:
+				displayMessage(message);
+		} // end switch message
 	} // end method processMessage
 	
 	//Here get move location from opponent
 	private int getOpponentMove() {
-		// Please write your code here
-		return 0;
+		Message m = receiveMessage();
+		int loc = -1;
+		
+		while(loc < 0) {
+			try {
+				loc = Integer.parseInt(m.getBody());
+			}
+			catch(NumberFormatException nfe) {
+				loc = -1;
+				m = receiveMessage();
+			}
+		}
+		
+		deleteMessage(m);
+		
+		return loc;
 	}
 	// manipulate outputArea in event-dispatch thread
 	private void displayMessage( final String messageToDisplay )
 	{
 		SwingUtilities.invokeLater(() -> {
-			displayArea.append( messageToDisplay ); // updates output
+			displayArea.append( messageToDisplay + "\n"); // updates output
 		}); // end call to SwingUtilities.invokeLater
 	} // end method displayMessage
 	
@@ -587,6 +604,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			// Below you send the clicked location to the cloud service that will notify the opponent,
 			// Or the opponent will retrieve the move location itself.
 			// Please write your own code below.
+			sendResult = sendMessage(location + "");
 			
 			myTurn = false; // not my turn anymore
 		} // end if
@@ -597,6 +615,13 @@ public class TicTacToeClient extends JFrame implements Runnable
 	{
 		currentSquare = square; // set current square to argument
 	} // end method setCurrentSquare
+	
+	private boolean isValidMove(int location) {
+		int row = location / bsize;
+		int col = location % bsize;
+		
+		return board[row][col].getMark().equals(" ") && myTurn;
+	}
 	
 	// private inner class for the squares on the board
 	private class Square extends JPanel {
@@ -611,13 +636,15 @@ public class TicTacToeClient extends JFrame implements Runnable
 				public void mouseReleased( MouseEvent e )
 				{
 					setCurrentSquare( Square.this ); // set current square
-					TicTacToeClient.this.setMark( currentSquare, myMark );
-					displayMessage("You clicked at location: " + getSquareLocation() + "\n");
-					
-					// You may have to send location of this square to
-					// the cloud service that will notify the opponent player.
-					//if(isValidMove()) // you have write your own method isValidMove().
-					    //sendClickedSquare( getSquareLocation() );
+					if(isValidMove(Square.this.location)) {
+						TicTacToeClient.this.setMark( currentSquare, myMark );
+//						displayMessage("You clicked at location: " + getSquareLocation());
+						sendResult = sendMessage(OPP_MOVE);
+						sendClickedSquare(location);
+					}
+					else {
+						displayMessage((myTurn) ? "Invalid move. Try again." : "Not your turn. Please wait.");
+					}
 					
 					} // end method mouseReleased
 				} // end anonymous inner class
