@@ -8,10 +8,7 @@ import com.amazonaws.services.sqs.AmazonSQSClient;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
 
-import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.Graphics;
-import java.awt.GridLayout;
+import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import javax.swing.*;
@@ -23,6 +20,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+
+import static java.lang.Thread.sleep;
 
 public class TicTacToeClient extends JFrame implements Runnable 
 {
@@ -38,11 +37,15 @@ public class TicTacToeClient extends JFrame implements Runnable
 	private final String O_MARK = "O"; // mark for second client
 	private final int bsize = 16;
 	
+	private WinningLocation[] winLocations = new WinningLocation[5];
+	private boolean won = false;
+	
 	private final static AmazonSQSClient client = (AmazonSQSClient) AmazonSQSClientBuilder.standard()
 			.withRegion(Regions.US_WEST_2).build();
 	private final String queue;
 	private final static String MSG_GROUP = "CSCD467Final_TicTacToe";
 	private final static String OPP_MOVE = "Opponent moved.";
+	private final static String OPP_WON = "Opponent Won";
 	private SendMessageResult sendResult;
 	
 	// set up user-interface and board
@@ -121,7 +124,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			sendResult = sendMessage(myMark + " connected.");
 			displayMessage("Waiting for " + O_MARK + " player to connect.");
 			
-			m = waitForNewMsg(m.getMessageId());
+			m = waitForNewMsg(sendResult.getMessageId());
 			displayMessage(m.getBody());
 			deleteMessage(m);
 			
@@ -131,7 +134,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		else {
 			myMark = O_MARK;
 			sendResult = sendMessage(myMark + " connected.");
-			displayMessage("Connected.");
+			displayMessage("Connected. Waiting to start...");
 			
 			m = waitForNewMsg(sendResult.getMessageId());
 			displayMessage(m.getBody());
@@ -145,9 +148,10 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}); // end call to SwingUtilities.invokeLater
 		
 		myTurn = ( myMark.equals( X_MARK ) ); // determine if client's turn
+		displayMessage((myTurn) ? "Your move." : "Opponents move.");
 		
 		// program the game logic below
-		while ( ! isGameOver() )
+		while ( ! isGameOver() && !won)
 		{
 			// Here in this while body, you will program the game logic.
 			// You are free to add any helper methods in this class or other classes.
@@ -155,17 +159,33 @@ public class TicTacToeClient extends JFrame implements Runnable
 			// and process it until game over is detected.
 			// Please check the processMessage() method below to gain some clues.
 			
-			while(!myTurn) {
+			while(!myTurn && !won) {
 				m = waitForNewMsg(sendResult.getMessageId());
 				deleteMessage(m);
 				processMessage(m.getBody());
-			}
-			
-			
+			} // end while !myTurn
 		} // end while
 		
-
+		highlightWin();
+		closeClient();
 	} // end method run
+	
+	private void closeClient() {
+		new Thread(() -> {
+			for(int i = 10; i > 0; i--) {
+				displayMessage("Closing client in " + (i) + "...");
+				try {
+					Thread.sleep(1000);
+				}
+				catch(InterruptedException ie) {
+					ie.printStackTrace();
+				}
+			}
+			displayMessage("Closing.");
+			
+			System.exit(0);
+		}).start();
+	}
 	
 	/**
 	 * Print any errors resulting from a message being sent or received to the Amazon SQS
@@ -182,16 +202,6 @@ public class TicTacToeClient extends JFrame implements Runnable
 	} // end printErrors
 	
 	/**
-	 * Delete an entire collection of messages from the queue
-	 * @param messages the messages to be deleted
-	 */
-	private void deleteMessages(List<Message> messages) {
-		for(Message message : messages) {
-			client.deleteMessage(new DeleteMessageRequest().withQueueUrl(queue).withReceiptHandle(message.getReceiptHandle()));
-		}
-	}
-	
-	/**
 	 * Delete a single message from the queue
 	 * @param message the message to be deleted
 	 */
@@ -205,6 +215,8 @@ public class TicTacToeClient extends JFrame implements Runnable
 	 * @return the SendMessageResult returned from the AmazonSQSClient.sendMessage function
 	 */
 	private SendMessageResult sendMessage(String message) {
+//		displayMessage("Sending: " + message);
+		
 		return client.sendMessage(new SendMessageRequest()
 				.withQueueUrl(queue)
 				.withMessageBody(message)
@@ -241,12 +253,14 @@ public class TicTacToeClient extends JFrame implements Runnable
 		while(result.getBody().length() == 0 || result.getMessageId().equals(oldMsgId)) {
 			messages = client.receiveMessage(new ReceiveMessageRequest()
 					.withQueueUrl(queue)
-					.withWaitTimeSeconds(20)
+					.withWaitTimeSeconds(5)
 					.withMaxNumberOfMessages(1)
 			).getMessages();
 			
 			result = (messages.size() == 0) ? new Message().withBody("") : messages.get(0);
 		}
+		
+//		displayMessage("Received: " + result.getBody());
 		
 		return result;
 	}
@@ -261,25 +275,29 @@ public class TicTacToeClient extends JFrame implements Runnable
 				if(!board[i][j].getMark().equals(" ")) {
 					curMark = board[i][j].getMark(); // set mark to search for
 					
-					if(i+5 < board.length) {
+					if(i+4 < board.length) {
 						if(j < 4) {
 							if(checkLeftArea(i, j, curMark)) {
+								sendResult = sendMessage(OPP_WON);
 								return true;
 							}
 						} // end if (j == 0)
-						else if(j+5 < board[i].length) {
+						else if(j+4 < board[i].length) {
 							if(checkCenterArea(i, j, curMark)) {
+								sendResult = sendMessage(OPP_WON);
 								return true;
 							}
 						} // end else-if (j+5)
 						else {
 							if(checkRightArea(i, j, curMark)) {
+								sendResult = sendMessage(OPP_WON);
 								return true;
 							}
 						} // end else
 					} // end if (i+5)
 					else {
 						if(checkBottomArea(i, j, curMark)) {
+							sendResult = sendMessage(OPP_WON);
 							return true;
 						}
 					}
@@ -288,7 +306,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		} // end for i
 		
 		return false;
-	}
+	} // end isGameOver
 	
 	private boolean checkLeftArea(int row, int col, String mark) {
 		int c = 0;
@@ -301,6 +319,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "right");
 			return true;
 		}
 		else {
@@ -315,6 +334,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "down");
 			return true;
 		}
 		else {
@@ -329,6 +349,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "down-right");
 			return true;
 		}
 		else {
@@ -350,6 +371,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "right");
 			return true;
 		}
 		else {
@@ -364,6 +386,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "down");
 			return true;
 		}
 		else {
@@ -378,6 +401,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "down-right");
 			return true;
 		}
 		else {
@@ -393,6 +417,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			}
 			
 			if(markCnt == 5) {
+				storeWinningLocation(row, col, "down-left");
 				return true;
 			}
 			else {
@@ -415,6 +440,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "down");
 			return true;
 		}
 		else {
@@ -429,6 +455,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 		
 		if(markCnt == 5) {
+			storeWinningLocation(row, col, "down-left");
 			return true;
 		}
 		else {
@@ -451,6 +478,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			}
 			
 			if(markCnt == 5) {
+				storeWinningLocation(row, col, "up");
 				return true;
 			}
 			else {
@@ -465,6 +493,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			}
 			
 			if(markCnt == 5) {
+				storeWinningLocation(row, col, "right");
 				return true;
 			}
 			else {
@@ -479,6 +508,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			}
 			
 			if(markCnt == 5) {
+				storeWinningLocation(row, col, "up-right");
 				return true;
 			}
 			else {
@@ -494,6 +524,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			}
 			
 			if(markCnt == 5) {
+				storeWinningLocation(row, col, "up");
 				return true;
 			}
 			else {
@@ -508,6 +539,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			}
 			
 			if(markCnt == 5) {
+				storeWinningLocation(row, col, "up-right");
 				return true;
 			}
 			else {
@@ -522,6 +554,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			}
 			
 			if(markCnt == 5) {
+				storeWinningLocation(row, col, "right");
 				return true;
 			}
 			else {
@@ -533,15 +566,69 @@ public class TicTacToeClient extends JFrame implements Runnable
 		return false;
 	}
 	
+	private void storeWinningLocation(int row, int col, String direction) {
+		switch(direction) {
+			case "right":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row, col+i);
+				}
+				break;
+				
+			case "left":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row, col-i);
+				}
+				break;
+				
+			case "up":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row-i, col);
+				}
+				break;
+				
+			case "down":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row+i, col);
+				}
+				break;
+			
+			case "up-right":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row-i, col+i);
+				}
+				break;
+			
+			case "up-left":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row-i, col-i);
+				}
+				break;
+			
+			case "down-right":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row+i, col+i);
+				}
+				break;
+			
+			case "down-left":
+				for(int i = 0; i < winLocations.length; i++) {
+					winLocations[i] = new WinningLocation(row+i, col-i);
+				}
+				break;
+			
+		} // end switch(direction)
+	}
+	
 	// This method is not used currently, but it may give you some hints regarding
 	// how one client talks to other client through cloud service(s).
 	private void processMessage( String message )
 	{
 		switch(message) {
-			case "Opponent Won":
-				displayMessage("Game over, Opponent won.");
+			case OPP_WON:
+				displayMessage("Game over, You won.");
 				// highlight winning locations
-				
+				highlightWin();
+				myTurn = true;
 				break;
 				
 			case OPP_MOVE:
@@ -553,12 +640,43 @@ public class TicTacToeClient extends JFrame implements Runnable
 				displayMessage("Opponent moved. Your turn.");
 				myTurn = true;
 				
+				tempSquareColor(row, col);
+				
 				break;
 				
 			default:
 				displayMessage(message);
 		} // end switch message
 	} // end method processMessage
+	
+	private void tempSquareColor(final int row, final int col) {
+		new Thread(()-> {
+			Square sq = board[row][col];
+			
+			if(sq.getBackground() != null) {
+				sq.setBackground(Color.YELLOW);
+				
+				try {
+					Thread.sleep(2000);
+				}
+				catch(InterruptedException ie) {
+					ie.printStackTrace();
+				}
+				
+				sq.setBackground(null);
+			}
+		}).start();
+	}
+	
+	private void highlightWin() {
+		displayMessage(OPP_WON);
+		
+		new Thread(() -> {
+			for(WinningLocation loc : winLocations) {
+				board[loc.getRow()][loc.getCol()].setBackground(Color.GREEN);
+			}
+		}).start();
+	}
 	
 	//Here get move location from opponent
 	private int getOpponentMove() {
@@ -605,6 +723,7 @@ public class TicTacToeClient extends JFrame implements Runnable
 			// Or the opponent will retrieve the move location itself.
 			// Please write your own code below.
 			sendResult = sendMessage(location + "");
+//			displayMessage("Not my turn anymore.");
 			
 			myTurn = false; // not my turn anymore
 		} // end if
@@ -641,6 +760,8 @@ public class TicTacToeClient extends JFrame implements Runnable
 //						displayMessage("You clicked at location: " + getSquareLocation());
 						sendResult = sendMessage(OPP_MOVE);
 						sendClickedSquare(location);
+						
+						won = isGameOver();
 					}
 					else {
 						displayMessage((myTurn) ? "Invalid move. Try again." : "Not your turn. Please wait.");
@@ -690,7 +811,23 @@ public class TicTacToeClient extends JFrame implements Runnable
 		}
 	} // end inner-class Square
 	
-	
+	private class WinningLocation {
+		private int row;
+		private int col;
+		
+		public WinningLocation(int row, int col) {
+			this.row = row;
+			this.col = col;
+		}
+		
+		public int getRow() {
+			return row;
+		}
+		
+		public int getCol() {
+			return col;
+		}
+	}
 	
 	public static void main( String args[] )
 	{
